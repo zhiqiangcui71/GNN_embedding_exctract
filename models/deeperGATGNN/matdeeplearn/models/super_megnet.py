@@ -1,7 +1,7 @@
 import torch
 from torch import Tensor
 import torch.nn.functional as F
-from torch.nn import Sequential, Linear, ReLU, BatchNorm1d
+from torch.nn import Sequential, Linear, ReLU
 import torch_geometric
 from torch_geometric.nn import (
     Set2Set,
@@ -17,12 +17,9 @@ from torch_scatter import scatter_mean, scatter_add, scatter_max, scatter
 class Megnet_EdgeModel(torch.nn.Module):
     def __init__(self, dim, act, batch_norm, batch_track_stats, dropout_rate, fc_layers=2):
         super(Megnet_EdgeModel, self).__init__()
-        self.act=act
+        self.act = act
         self.fc_layers = fc_layers
-        if batch_track_stats == "False":
-            self.batch_track_stats = False 
-        else:
-            self.batch_track_stats = True 
+        self.batch_track_stats = batch_track_stats == "True"
         self.batch_norm = batch_norm
         self.dropout_rate = dropout_rate
                 
@@ -36,13 +33,12 @@ class Megnet_EdgeModel(torch.nn.Module):
                 lin = torch.nn.Linear(dim, dim)
                 self.edge_mlp.append(lin) 
             if self.batch_norm == "True":
-                #bn = BatchNorm1d(dim, track_running_stats=self.batch_track_stats)
                 bn = DiffGroupNorm(dim, 10, track_running_stats=self.batch_track_stats)
                 self.bn_list.append(bn)            
 
     def forward(self, src, dest, edge_attr, u, batch):
         comb = torch.cat([src, dest, edge_attr, u[batch]], dim=1)
-        for i in range(0, len(self.edge_mlp)):
+        for i in range(len(self.edge_mlp)):
             if i == 0:
                 out = self.edge_mlp[i](comb)
                 out = getattr(F, self.act)(out)  
@@ -64,12 +60,9 @@ class Megnet_EdgeModel(torch.nn.Module):
 class Megnet_NodeModel(torch.nn.Module):
     def __init__(self, dim, act, batch_norm, batch_track_stats, dropout_rate, fc_layers=2):
         super(Megnet_NodeModel, self).__init__()
-        self.act=act
+        self.act = act
         self.fc_layers = fc_layers
-        if batch_track_stats == "False":
-            self.batch_track_stats = False 
-        else:
-            self.batch_track_stats = True 
+        self.batch_track_stats = batch_track_stats == "True"
         self.batch_norm = batch_norm
         self.dropout_rate = dropout_rate
                 
@@ -83,15 +76,13 @@ class Megnet_NodeModel(torch.nn.Module):
                 lin = torch.nn.Linear(dim, dim)
                 self.node_mlp.append(lin) 
             if self.batch_norm == "True":
-                #bn = BatchNorm1d(dim, track_running_stats=self.batch_track_stats)
                 bn = DiffGroupNorm(dim, 10, track_running_stats=self.batch_track_stats)
                 self.bn_list.append(bn)    
 
     def forward(self, x, edge_index, edge_attr, u, batch):
-        # row, col = edge_index
         v_e = scatter_mean(edge_attr, edge_index[0, :], dim=0)
         comb = torch.cat([x, v_e, u[batch]], dim=1)
-        for i in range(0, len(self.node_mlp)):
+        for i in range(len(self.node_mlp)):
             if i == 0:
                 out = self.node_mlp[i](comb)
                 out = getattr(F, self.act)(out)  
@@ -113,12 +104,9 @@ class Megnet_NodeModel(torch.nn.Module):
 class Megnet_GlobalModel(torch.nn.Module):
     def __init__(self, dim, act, batch_norm, batch_track_stats, dropout_rate, fc_layers=2):
         super(Megnet_GlobalModel, self).__init__()
-        self.act=act
+        self.act = act
         self.fc_layers = fc_layers
-        if batch_track_stats == "False":
-            self.batch_track_stats = False 
-        else:
-            self.batch_track_stats = True 
+        self.batch_track_stats = batch_track_stats == "True"
         self.batch_norm = batch_norm
         self.dropout_rate = dropout_rate
                 
@@ -132,7 +120,6 @@ class Megnet_GlobalModel(torch.nn.Module):
                 lin = torch.nn.Linear(dim, dim)
                 self.global_mlp.append(lin) 
             if self.batch_norm == "True":
-                #bn = BatchNorm1d(dim, track_running_stats=self.batch_track_stats)
                 bn = DiffGroupNorm(dim, 10, track_running_stats=self.batch_track_stats)
                 self.bn_list.append(bn)  
 
@@ -141,7 +128,7 @@ class Megnet_GlobalModel(torch.nn.Module):
         u_e = scatter_mean(u_e, batch, dim=0)
         u_v = scatter_mean(x, batch, dim=0)
         comb = torch.cat([u_e, u_v, u], dim=1)
-        for i in range(0, len(self.global_mlp)):
+        for i in range(len(self.global_mlp)):
             if i == 0:
                 out = self.global_mlp[i](comb)
                 out = getattr(F, self.act)(out)  
@@ -181,37 +168,34 @@ class SUPER_MEGNet(torch.nn.Module):
     ):
         super(SUPER_MEGNet, self).__init__()
         
-        if batch_track_stats == "False":
-            self.batch_track_stats = False 
-        else:
-            self.batch_track_stats = True 
+        self.batch_track_stats = batch_track_stats == "True"
         self.batch_norm = batch_norm
         self.pool = pool
         if pool == "global_mean_pool":
-            self.pool_reduce="mean"
-        elif pool== "global_max_pool":
-            self.pool_reduce="max" 
-        elif pool== "global_sum_pool":
-            self.pool_reduce="sum"             
+            self.pool_reduce = "mean"
+        elif pool == "global_max_pool":
+            self.pool_reduce = "max" 
+        elif pool == "global_sum_pool":
+            self.pool_reduce = "sum"             
         self.act = act
         self.pool_order = pool_order
         self.dropout_rate = dropout_rate
         
-        ##Determine gc dimension dimension
+        ## Determine gc dimension dimension
         assert gc_count > 0, "Need at least 1 GC layer"
         if pre_fc_count == 0:
             gc_dim = data.num_features
         else:
             gc_dim = dim1
-        ##Determine post_fc dimension
+        ## Determine post_fc dimension
         post_fc_dim = dim3
-        ##Determine output dimension length
+        ## Determine output dimension length
         if data[0].y.ndim == 0:
             output_dim = 1
         else:
             output_dim = len(data[0].y[0])
 
-        ##Set up pre-GNN dense layers (NOTE: in v0.1 this is always set to 1 layer)
+        ## Set up pre-GNN dense layers
         if pre_fc_count > 0:
             self.pre_lin_list = torch.nn.ModuleList()
             for i in range(pre_fc_count):
@@ -224,7 +208,7 @@ class SUPER_MEGNet(torch.nn.Module):
         elif pre_fc_count == 0:
             self.pre_lin_list = torch.nn.ModuleList()
 
-        ##Set up GNN layers
+        ## Set up GNN layers
         self.e_embed_list = torch.nn.ModuleList()
         self.x_embed_list = torch.nn.ModuleList()
         self.u_embed_list = torch.nn.ModuleList()   
@@ -266,12 +250,11 @@ class SUPER_MEGNet(torch.nn.Module):
                     )
                 )
 
-        ##Set up post-GNN dense layers (NOTE: in v0.1 there was a minimum of 2 dense layers, and fc_count(now post_fc_count) added to this number. In the current version, the minimum is zero)
+        ## Set up post-GNN dense layers
         if post_fc_count > 0:
             self.post_lin_list = torch.nn.ModuleList()
             for i in range(post_fc_count):
                 if i == 0:
-                    ##Set2set pooling has doubled dimension
                     if self.pool_order == "early" and self.pool == "set2set":
                         lin = torch.nn.Linear(post_fc_dim * 5, dim2)
                     elif self.pool_order == "early" and self.pool != "set2set":
@@ -293,32 +276,27 @@ class SUPER_MEGNet(torch.nn.Module):
             else:
                 self.lin_out = torch.nn.Linear(post_fc_dim, output_dim)   
 
-        ##Set up set2set pooling (if used)
+        ## Set up set2set pooling (if used)
         if self.pool_order == "early" and self.pool == "set2set":
             self.set2set_x = Set2Set(post_fc_dim, processing_steps=3)
             self.set2set_e = Set2Set(post_fc_dim, processing_steps=3)
         elif self.pool_order == "late" and self.pool == "set2set":
             self.set2set_x = Set2Set(output_dim, processing_steps=3, num_layers=1)
-            # workaround for doubled dimension by set2set; if late pooling not reccomended to use set2set
             self.lin_out_2 = torch.nn.Linear(output_dim * 2, output_dim)
 
     def forward(self, data):
 
-        ##Pre-GNN dense layers
-        for i in range(0, len(self.pre_lin_list)):
+        ## Pre-GNN dense layers
+        for i in range(len(self.pre_lin_list)):
             if i == 0:
                 out = self.pre_lin_list[i](data.x)
                 out = getattr(F, self.act)(out)
-                #prev_out = out
             else:
                 out = self.pre_lin_list[i](out)
                 out = getattr(F, self.act)(out)
-                #out = torch.add(out, prev_out)
-                #prev_out = out
-        #prev_out = out
 
-        ##GNN layers        
-        for i in range(0, len(self.conv_list)):
+        ## GNN layers        
+        for i in range(len(self.conv_list)):
             if i == 0:
                 if len(self.pre_lin_list) == 0:
                     e_temp = self.e_embed_list[i](data.edge_attr)
@@ -363,9 +341,7 @@ class SUPER_MEGNet(torch.nn.Module):
                 prev_e = e
                 prev_u = u
 
-                      
-
-        ##Post-GNN dense layers
+        ## Post-GNN dense layers
         if self.pool_order == "early":
             if self.pool == "set2set":
                 x_pool = self.set2set_x(x, data.batch)
@@ -377,33 +353,22 @@ class SUPER_MEGNet(torch.nn.Module):
                 e_pool = scatter(e, data.edge_index[0, :], dim=0, reduce=self.pool_reduce)
                 e_pool = scatter(e_pool, data.batch, dim=0, reduce=self.pool_reduce)
                 out = torch.cat([x_pool, e_pool, u], dim=1)
-            #prev_out = out
-            for i in range(0, len(self.post_lin_list)):
+            for i in range(len(self.post_lin_list)):
                 out = self.post_lin_list[i](out)
                 out = getattr(F, self.act)(out)
-                #out = torch.add(out, prev_out)
-                #prev_out = out
+            embedding = out  # Save the embedding before the final output layer
             out = self.lin_out(out)
-            #out = torch.add(out, prev_out)
-            #prev_out = out
 
-        ##currently only uses node features for late pooling
         elif self.pool_order == "late":
             out = x
-            #prev_out = out
-            for i in range(0, len(self.post_lin_list)):
+            for i in range(len(self.post_lin_list)):
                 out = self.post_lin_list[i](out)
                 out = getattr(F, self.act)(out)
-                #out = torch.add(out, prev_out)
-                #prev_out = out
+            embedding = out  # Save the embedding before the final output layer
             out = self.lin_out(out)
-            #out = torch.add(out, prev_out)
-            #prev_out = out
             if self.pool == "set2set":
                 out = self.set2set_x(out, data.batch)
                 out = self.lin_out_2(out)
-                #out = torch.add(out, prev_out)
-                #prev_out = out
             else:
                 out = getattr(torch_geometric.nn, self.pool)(out, data.batch)
                 
@@ -411,3 +376,87 @@ class SUPER_MEGNet(torch.nn.Module):
             return out.view(-1)
         else:
             return out
+
+    def get_embedding(self, data):
+        self.eval()  # Set model to evaluation mode
+        with torch.no_grad():
+            ## Pre-GNN dense layers
+            for i in range(len(self.pre_lin_list)):
+                if i == 0:
+                    out = self.pre_lin_list[i](data.x)
+                    out = getattr(F, self.act)(out)
+                else:
+                    out = self.pre_lin_list[i](out)
+                    out = getattr(F, self.act)(out)
+
+            ## GNN layers        
+            for i in range(len(self.conv_list)):
+                if i == 0:
+                    if len(self.pre_lin_list) == 0:
+                        e_temp = self.e_embed_list[i](data.edge_attr)
+                        x_temp = self.x_embed_list[i](data.x)
+                        u_temp = self.u_embed_list[i](data.u)
+                        x_out, e_out, u_out = self.conv_list[i](
+                            x_temp, data.edge_index, e_temp, u_temp, data.batch
+                        )
+                        x = torch.add(x_out, x_temp)
+                        e = torch.add(e_out, e_temp)
+                        u = torch.add(u_out, u_temp)
+                    else:
+                        e_temp = self.e_embed_list[i](data.edge_attr)
+                        x_temp = self.x_embed_list[i](out)
+                        u_temp = self.u_embed_list[i](data.u)
+                        x_out, e_out, u_out = self.conv_list[i](
+                            x_temp, data.edge_index, e_temp, u_temp, data.batch
+                        )
+                        x = torch.add(x_out, x_temp)
+                        e = torch.add(e_out, e_temp)
+                        u = torch.add(u_out, u_temp)
+                    prev_x = x
+                    prev_e = e
+                    prev_u = u
+
+                elif i > 0:
+                    e_temp = self.e_embed_list[i](e)
+                    x_temp = self.x_embed_list[i](x)
+                    u_temp = self.u_embed_list[i](u)
+                    x_out, e_out, u_out = self.conv_list[i](
+                        x_temp, data.edge_index, e_temp, u_temp, data.batch
+                    )
+                    x = torch.add(x_out, x)
+                    e = torch.add(e_out, e)
+                    u = torch.add(u_out, u)
+
+                    x = torch.add(x, prev_x)
+                    e = torch.add(e, prev_e)
+                    u = torch.add(u, prev_u)
+
+                    prev_x = x
+                    prev_e = e
+                    prev_u = u
+
+            ## Post-GNN dense layers
+            if self.pool_order == "early":
+                if self.pool == "set2set":
+                    x_pool = self.set2set_x(x, data.batch)
+                    e = scatter(e, data.edge_index[0, :], dim=0, reduce="mean")
+                    e_pool = self.set2set_e(e, data.batch)
+                    out = torch.cat([x_pool, e_pool, u], dim=1)                
+                else:
+                    x_pool = scatter(x, data.batch, dim=0, reduce=self.pool_reduce)
+                    e_pool = scatter(e, data.edge_index[0, :], dim=0, reduce=self.pool_reduce)
+                    e_pool = scatter(e_pool, data.batch, dim=0, reduce=self.pool_reduce)
+                    out = torch.cat([x_pool, e_pool, u], dim=1)
+                for i in range(len(self.post_lin_list)):
+                    out = self.post_lin_list[i](out)
+                    out = getattr(F, self.act)(out)
+                embedding = out  # Save the embedding before the final output layer
+
+            elif self.pool_order == "late":
+                out = x
+                for i in range(len(self.post_lin_list)):
+                    out = self.post_lin_list[i](out)
+                    out = getattr(F, self.act)(out)
+                embedding = out  # Save the embedding before the final output layer
+
+            return embedding

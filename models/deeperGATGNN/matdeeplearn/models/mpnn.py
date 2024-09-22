@@ -34,7 +34,6 @@ class MPNN(torch.nn.Module):
     ):
         super(MPNN, self).__init__()
 
-        
         if batch_track_stats == "False":
             self.batch_track_stats = False 
         else:
@@ -123,7 +122,7 @@ class MPNN(torch.nn.Module):
             self.set2set = Set2Set(post_fc_dim, processing_steps=3)
         elif self.pool_order == "late" and self.pool == "set2set":
             self.set2set = Set2Set(output_dim, processing_steps=3, num_layers=1)
-            # workaround for doubled dimension by set2set; if late pooling not reccomended to use set2set
+            # workaround for doubled dimension by set2set; if late pooling not recommended to use set2set
             self.lin_out_2 = torch.nn.Linear(output_dim * 2, output_dim)
 
     def forward(self, data):
@@ -169,12 +168,14 @@ class MPNN(torch.nn.Module):
             for i in range(0, len(self.post_lin_list)):
                 out = self.post_lin_list[i](out)
                 out = getattr(F, self.act)(out)
+            embedding = out  # Save the embedding before the final output layer
             out = self.lin_out(out)
 
         elif self.pool_order == "late":
             for i in range(0, len(self.post_lin_list)):
                 out = self.post_lin_list[i](out)
                 out = getattr(F, self.act)(out)
+            embedding = out  # Save the embedding before the final output layer
             out = self.lin_out(out)
             if self.pool == "set2set":
                 out = self.set2set(out, data.batch)
@@ -186,3 +187,59 @@ class MPNN(torch.nn.Module):
             return out.view(-1)
         else:
             return out
+
+    def get_embedding(self, data):
+        self.eval()  # Set model to evaluation mode
+        with torch.no_grad():
+            ##Pre-GNN dense layers
+            for i in range(0, len(self.pre_lin_list)):
+                if i == 0:
+                    out = self.pre_lin_list[i](data.x)
+                    out = getattr(F, self.act)(out)
+                else:
+                    out = self.pre_lin_list[i](out)
+                    out = getattr(F, self.act)(out)
+
+            ##GNN layers
+            if len(self.pre_lin_list) == 0:
+                h = data.x.unsqueeze(0)    
+            else:
+                h = out.unsqueeze(0)                
+            for i in range(0, len(self.conv_list)):
+                if len(self.pre_lin_list) == 0 and i == 0:
+                    if self.batch_norm == "True":
+                        m = self.conv_list[i](data.x, data.edge_index, data.edge_attr)
+                        m = self.bn_list[i](m)
+                    else:
+                        m = self.conv_list[i](data.x, data.edge_index, data.edge_attr)
+                else:
+                    if self.batch_norm == "True":
+                        m = self.conv_list[i](out, data.edge_index, data.edge_attr)
+                        m = self.bn_list[i](m)
+                    else:
+                        m = self.conv_list[i](out, data.edge_index, data.edge_attr)            
+                m = getattr(F, self.act)(m)          
+                out, h = self.gru_list[i](m.unsqueeze(0), h)
+                out = out.squeeze(0)                
+
+            ##Post-GNN dense layers
+            if self.pool_order == "early":
+                if self.pool == "set2set":
+                    out = self.set2set(out, data.batch)
+                else:
+                    out = getattr(torch_geometric.nn, self.pool)(out, data.batch)
+                # Return the pooled embedding directly
+                return out
+
+            elif self.pool_order == "late":
+                for i in range(0, len(self.post_lin_list)):
+                    out = self.post_lin_list[i](out)
+                    out = getattr(F, self.act)(out)
+                # Return the pooled embedding directly
+                if self.pool == "set2set":
+                    out = self.set2set(out, data.batch)
+                    return out
+                else:
+                    out = getattr(torch_geometric.nn, self.pool)(out, data.batch)
+                    return out
+
