@@ -1,6 +1,0 @@
-[submodule "models/alignn"]
-	path = models/alignn
-	url = https://github.com/usnistgov/alignn.git
-[submodule "models/deeperGATGNN"]
-	path = models/deeperGATGNN
-	url = https://github.com/usccolumbia/deeperGATGNN.git
