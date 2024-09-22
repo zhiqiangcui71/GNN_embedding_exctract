@@ -369,3 +369,76 @@ class MEGNet(torch.nn.Module):
             return out.view(-1)
         else:
             return out
+        
+    def get_embedding(self, data):
+        with torch.no_grad():
+            ##Pre-GNN dense layers
+            for i in range(0, len(self.pre_lin_list)):
+                if i == 0:
+                    out = self.pre_lin_list[i](data.x)
+                    out = getattr(F, self.act)(out)
+                else:
+                    out = self.pre_lin_list[i](out)
+                    out = getattr(F, self.act)(out)
+
+            ##GNN layers        
+            for i in range(0, len(self.conv_list)):
+                if i == 0:
+                    if len(self.pre_lin_list) == 0:
+                        e_temp = self.e_embed_list[i](data.edge_attr)
+                        x_temp = self.x_embed_list[i](data.x)
+                        u_temp = self.u_embed_list[i](data.u)
+                        x_out, e_out, u_out = self.conv_list[i](
+                            x_temp, data.edge_index, e_temp, u_temp, data.batch
+                        )
+                        x = torch.add(x_out, x_temp)
+                        e = torch.add(e_out, e_temp)
+                        u = torch.add(u_out, u_temp)
+                    else:
+                        e_temp = self.e_embed_list[i](data.edge_attr)
+                        x_temp = self.x_embed_list[i](out)
+                        u_temp = self.u_embed_list[i](data.u)
+                        x_out, e_out, u_out = self.conv_list[i](
+                            x_temp, data.edge_index, e_temp, u_temp, data.batch
+                        )
+                        x = torch.add(x_out, x_temp)
+                        e = torch.add(e_out, e_temp)
+                        u = torch.add(u_out, u_temp)
+
+                elif i > 0:
+                    e_temp = self.e_embed_list[i](e)
+                    x_temp = self.x_embed_list[i](x)
+                    u_temp = self.u_embed_list[i](u)
+                    x_out, e_out, u_out = self.conv_list[i](
+                        x_temp, data.edge_index, e_temp, u_temp, data.batch
+                    )
+                    x = torch.add(x_out, x)
+                    e = torch.add(e_out, e)
+                    u = torch.add(u_out, u)
+
+            ##Post-GNN dense layers
+            if self.pool_order == "early":
+                if self.pool == "set2set":
+                    x_pool = self.set2set_x(x, data.batch)
+                    e = scatter(e, data.edge_index[0, :], dim=0, reduce="mean")
+                    e_pool = self.set2set_e(e, data.batch)
+                    out = torch.cat([x_pool, e_pool, u], dim=1)
+                    return out
+                else:
+                    x_pool = scatter(x, data.batch, dim=0, reduce=self.pool_reduce)
+                    e_pool = scatter(e, data.edge_index[0, :], dim=0, reduce=self.pool_reduce)
+                    e_pool = scatter(e_pool, data.batch, dim=0, reduce=self.pool_reduce)
+                    out = torch.cat([x_pool, e_pool, u], dim=1)
+                    return out
+
+            elif self.pool_order == "late":
+                out = x
+                for i in range(0, len(self.post_lin_list)):
+                    out = self.post_lin_list[i](out)
+                    out = getattr(F, self.act)(out)
+                if self.pool == "set2set":
+                    out = self.set2set_x(out, data.batch)
+                    return out
+                else:
+                    out = getattr(torch_geometric.nn, self.pool)(out, data.batch)
+                    return out
