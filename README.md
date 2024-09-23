@@ -1,22 +1,28 @@
-# GNN_embedding_exctract
-this repo is to extract the embeddings of the SOTA GNN model 
+Here's a draft for your GitHub `README.md`:
 
-# Necessary Installations
+---
 
-We use the PyTorch Framework for our code. Please install the following packages if not already installed. We show how to install them using pip only, but you can also use conda for the installation purpose. Also you can a virtual environment using conda or pip for this purpose (recommended).
+# Feature Extraction with ALIGNN and DeeperGATGNN
 
-1.  **Pytorch** :Tested on Pytorch 1.9.0. Use the following command to install (or you can also install the latest stable version using the command from the PyTorch website):
-```
-  pip install torch==1.9.0 torchvision==0.10.0
-```
-2.**Pytorch Geometric (PyG)**: Tested on torch-geometric 1.7.2. First, check your PyTorch and CUDA version. Then use the following commands to install:
-```
-export TORCH=1.9.0
-export CUDA=cu102
-pip install torch-scatter -f https://pytorch-geometric.com/whl/torch-${TORCH}+${CUDA}.html
-pip install torch-sparse -f https://pytorch-geometric.com/whl/torch-${TORCH}+${CUDA}.html
-pip install torch-cluster -f https://pytorch-geometric.com/whl/torch-${TORCH}+${CUDA}.html
-pip install torch-spline-conv -f https://pytorch-geometric.com/whl/torch-${TORCH}+${CUDA}.html
-pip install torch-geometric
-```
+This repository provides a framework for feature extraction using **ALIGNN** and **DeeperGATGNN** models. The data directory contains datasets prepared for both model architectures, and the models have been modified to return pooled feature vectors while maintaining the training process unchanged.
 
+## Repository Structure
+
+- **data/**: Contains datasets used for training the models.
+  - `alignn_data/`: Dataset prepared for the ALIGNN model.
+  - `deepergatgnn_data/`: Dataset prepared for DeeperGATGNN models.
+
+- **models/**: Predefined model architectures.
+  - `alignn/`: ALIGNN model files.
+  - `deepergatgnn/`: Various models for DeeperGATGNN, all of which return pooled feature vectors.
+
+- **extract_feature.py**: Script for feature extraction after training. Load the pretrained models and extract features for evaluation or further tasks.
+
+## How to Use
+
+1. **Training**: Train the models using the datasets in the `data/` directory. The training procedure remains unaffected by the modifications that enable feature vector extraction.
+
+2. **Feature Extraction**:
+   - After training, load the pretrained models.
+   - Run `extract_feature.py` to extract the feature vectors.
+   - These feature vectors can be used for further evaluation or downstream tasks.
